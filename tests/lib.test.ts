@@ -9,7 +9,7 @@ const SHIPPED = readFileSync(new URL("../restrictions.md", import.meta.url), "ut
 
 test("the shipped restrictions parse", () => {
   const policy = parsePolicy(SHIPPED);
-  assert.equal(policy.confidence, 0.9);
+  assert.equal(policy.confidence, 0.85);
   assert.deepEqual(policy.editable, ["~/.config/zsh/agents.zsh"]);
   assert.deepEqual(
     policy.restrictions.map((r) => r.id),
@@ -113,7 +113,8 @@ test("a call runs only when every restriction clears the confidence", () => {
   const policy = parsePolicy(SHIPPED);
   const all = (p: number) => Object.fromEntries(policy.restrictions.map((r) => [r.id, { noul: p }]));
   assert.equal(verdictOf(policy, all(0.97)).allowed, true);
-  assert.equal(verdictOf(policy, all(0.9)).allowed, true);
+  assert.equal(verdictOf(policy, all(0.85)).allowed, true);
+  assert.equal(verdictOf(policy, all(0.84)).allowed, false);
   const one = verdictOf(policy, { ...all(0.99), startup_and_access_files: { noul: 0.4 } });
   assert.equal(one.allowed, false);
   assert.deepEqual(one.doubted.map((d) => d.restriction.id), ["startup_and_access_files"]);
@@ -126,7 +127,7 @@ test("a blocked call repeats every restriction, marks the doubted ones and says 
   const policy = parsePolicy(SHIPPED);
   const verdict = verdictOf(policy, { files_outside_the_workspace: { noul: 0.42 }, startup_and_access_files: { noul: 0.99 }, the_disk_and_the_system: { noul: 0.99 } });
   const text = blockedMessage(policy, ["/Users/me/repos/app", "/private/tmp"], verdict);
-  assert.match(text, /^Blocked by pi-thunder-guard: this call did not run\. It could not be confirmed, with 90% confidence/);
+  assert.match(text, /^Blocked by pi-thunder-guard: this call did not run\. It could not be confirmed, with 85% confidence/);
   assert.match(text, /- Files outside the workspace: Don't delete.*\(in doubt: 42% sure it keeps to this\)/);
   assert.match(text, /- Startup and access files: Don't change shell startup files, or anything that runs or grants access automatically\.\n/);
   assert.match(text, /- The disk and the system: /);

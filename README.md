@@ -1,6 +1,6 @@
 # pi-thunder-guard
 
-A happy-path guard for [Pi](https://pi.dev): it stops an agent's mistakes from wiping your disk or your files. Before each bash call, Jev (TypeSafe's System One) is asked whether the call keeps to a short list of restrictions. Writes and edits outside the repository are checked the same way. A call runs only when Jev is at least 90% sure it keeps to every restriction. Otherwise it is blocked, and the model is told:
+A happy-path guard for [Pi](https://pi.dev): it stops an agent's mistakes from wiping your disk or your files. Before each bash call, Jev (TypeSafe's System One) is asked whether the call keeps to a short list of restrictions. Writes and edits outside the repository are checked the same way. A call runs only when Jev is at least 85% sure it keeps to every restriction. Otherwise it is blocked, and the model is told:
 - the restrictions;
 - which one was in doubt;
 - to break the command into simpler steps, or to ask you to run it.
@@ -13,7 +13,7 @@ It guards against mistakes, not against an agent that sets out to get around it.
 pi install git:github.com/Mandalorian007/pi-thunder-guard
 ```
 
-Pin a version with `@v0.2.1`. It needs a Jev key: `typesafe` in `~/.pi/agent/auth.json`, or `TYPESAFE_API_KEY`. Install it for the user, so every Pi process loads it, subagents included.
+Pin a version with `@v0.2.2`. It needs a Jev key: `typesafe` in `~/.pi/agent/auth.json`, or `TYPESAFE_API_KEY`. Install it for the user, so every Pi process loads it, subagents included.
 
 ## What is checked
 
@@ -48,11 +48,11 @@ Each `##` section is one restriction:
 - **Rule** is what the model is shown when a call is blocked.
 - **Keeps it** and **Breaks it** describe, for Jev, what each answer looks like.
 
-The file's frontmatter holds the confidence (`0.9`) and the `editable` list:
+The file's frontmatter holds the confidence (`0.85`) and the `editable` list:
 
 ```yaml
 ---
-confidence: 0.9
+confidence: 0.85
 editable:
   - ~/.config/zsh/agents.zsh
 ---
@@ -77,7 +77,7 @@ Every decision is saved in the session as a `thunder-guard` entry: the call, eac
 ## What the model sees when a call is blocked
 
 ```
-Blocked by pi-thunder-guard: this call did not run. It could not be confirmed, with 90% confidence, that it keeps to these restrictions:
+Blocked by pi-thunder-guard: this call did not run. It could not be confirmed, with 85% confidence, that it keeps to these restrictions:
 - Files outside the workspace: Don't delete, overwrite, move, empty or change the permissions of files or folders outside the workspace. (in doubt: 21% sure it keeps to this)
 - Startup and access files: Don't change shell startup files, or anything that runs or grants access automatically.
 - The disk and the system: Don't use administrator rights, or erase, format or write raw to a disk.
@@ -94,10 +94,10 @@ Break it into smaller commands that each do one thing, with every path written o
 
 The file is read on every call, so an edit applies at once. A broken file blocks every guarded call and says what is wrong.
 
-Calibration at v0.2.0: 41 of the 45 calls were decided as labelled.
-- **Every call that should be blocked was,** each with at least one restriction at 0.37 or below.
-- **The misses were all blocked rather than allowed:** creating a new file outside the workspace (about 0.8), and calls that land close to 0.9, such as `brew install jq` and a `>>` onto a worktree's shared `.git/info/exclude`.
-- **Jev's scores move by about 0.04 between identical runs,** so a safe call scoring around 0.9 is sometimes blocked. The model then gets the advice to break the call down, which usually gets it through.
+Calibration at v0.2.2, with confidence 0.85: 43 of the 45 calls were decided as labelled, the same in two runs.
+- **Every call that should be blocked was.** Each scored 0.20 or below on at least one restriction, far from 0.85.
+- **The two misses were blocked rather than allowed:** creating a new file outside the workspace (about 0.8), and a bash `>>` onto a worktree's shared `.git/info/exclude` (about 0.8). The edit and write tools reach that file without asking Jev.
+- **Jev's scores move by about 0.04 between identical runs.** At 0.9, safe calls that score around 0.9 (`brew install jq`, an append to the agent settings file) were sometimes blocked; at 0.85 they pass.
 
 ## Turning it off
 

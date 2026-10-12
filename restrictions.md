@@ -1,5 +1,5 @@
 ---
-confidence: 0.9
+confidence: 0.85
 # Files or folders outside the repository that agents may change freely.
 editable:
   - ~/.config/zsh/agents.zsh
