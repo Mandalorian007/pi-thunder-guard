@@ -90,6 +90,12 @@ test("paths written in a command are resolved and looked up in the workspace", (
   assert.deepEqual(paths("cd ~ && rm -rf .config"), [{ path: "/Users/me", in_workspace: false }]);
   assert.deepEqual(paths("rm ~/repos/*/x $D/y https://a.b/c src/a.ts"), []);
   assert.deepEqual(paths("cp a.txt OUT=/tmp/z"), [{ path: "/tmp/z", in_workspace: true }]);
+  assert.deepEqual(paths("rm -rf .. ./x"), [
+    { path: "/Users/me/repos", in_workspace: false },
+    { path: "/Users/me/repos/app/x", in_workspace: true },
+  ]);
+  const real = (p: string) => p.replace("/Users/me/repos/app/link", "/Users/me");
+  assert.deepEqual(pathsIn("rm -rf ./link/Documents", "/Users/me/repos/app", "/Users/me", ws, real), [{ path: "/Users/me/repos/app/link/Documents", in_workspace: false }]);
 });
 
 test("one Noul per restriction, with both outcomes described", () => {
@@ -126,6 +132,7 @@ test("a blocked call repeats every restriction, marks the doubted ones and says 
   assert.match(text, /- The disk and the system: /);
   assert.match(text, /The workspace: \/Users\/me\/repos\/app, \/private\/tmp/);
   assert.match(text, /Break it into smaller commands/);
+  assert.match(text, /use the edit or write tool/);
   assert.match(text, /ask the user to run it themselves/);
 
   const down = blockedMessage(policy, ["/private/tmp"], undefined, "Jev couldn't be asked (timeout). Try once more; if it keeps failing, tell the user.");

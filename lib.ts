@@ -141,17 +141,18 @@ export function describeCall(toolName: string, input: Record<string, unknown>, c
 
 // The paths written out in a bash command, resolved, each with whether it is
 // in the workspace: a lookup for code, not Jev. Only words that start like a
-// path (/, ~, ./, ../, $HOME) count; globs and other variables are left for
+// path (/, ~, ./, ../, .., $HOME) count, and a path is in the workspace only
+// when its real location is (a symlink out of the repository is not); globs and other variables are left for
 // Jev to judge from the command itself.
 export function pathsIn(command: string, cwd: string, home: string, workspace: string[], real: (p: string) => string = (p) => p): { path: string; in_workspace: boolean }[] {
   const found: { path: string; in_workspace: boolean }[] = [];
   for (const raw of command.match(/'[^']*'|"[^"]*"|[^\s;&|<>()`]+/g) ?? []) {
     let word = raw.replace(/^['"]|['"]$/g, "").replace(/^(?:\$HOME|\$\{HOME\})(?=\/|$)/, home);
     word = word.replace(/^[A-Za-z_][A-Za-z0-9_]*=/, "");
-    if (!/^(\/|~\/|~$|\.\.?\/)/.test(word) || /[$*?`]/.test(word)) continue;
+    if (!/^(\/|~\/|~$|\.\.?\/|\.\.$)/.test(word) || /[$*?`]/.test(word)) continue;
     const path = resolvePath(word, cwd, home);
     if (found.some((f) => f.path === path)) continue;
-    found.push({ path, in_workspace: inside(real(path), workspace) || inside(path, workspace) });
+    found.push({ path, in_workspace: inside(real(path), workspace) });
   }
   return found;
 }
@@ -203,7 +204,7 @@ export function verdictOf(policy: Policy, answers: Answers): Verdict {
 const percent = (p: number) => `${Math.round(p * 100)}%`;
 
 const BREAK_IT_DOWN =
-  "Break it into smaller commands that each do one thing, with every path written out in full, so each can be checked on its own. Avoid chaining steps with &&, ; or |, and avoid hiding paths in variables, subshells, eval or scripts. If a step really has to go beyond these restrictions, don't look for a way around the guard: ask the user to run it themselves.";
+  "Break it into smaller commands that each do one thing, with every path written out in full, so each can be checked on its own. To change a file in the workspace, use the edit or write tool, which aren't held up by this check. Avoid chaining steps with &&, ; or |, and avoid hiding paths in variables, subshells, eval or scripts. If a step really has to go beyond these restrictions, don't look for a way around the guard: ask the user to run it themselves.";
 
 // What the model reads in place of the tool's output when a call is blocked:
 // why, every restriction (the doubted ones marked), the workspace, and what to

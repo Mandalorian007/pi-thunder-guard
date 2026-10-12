@@ -13,7 +13,7 @@ It guards against mistakes, not against an agent that sets out to get around it.
 pi install git:github.com/Mandalorian007/pi-thunder-guard
 ```
 
-Pin a version with `@v0.2.0`. It needs a Jev key: `typesafe` in `~/.pi/agent/auth.json`, or `TYPESAFE_API_KEY`. Install it for the user, so every Pi process loads it, subagents included.
+Pin a version with `@v0.2.1`. It needs a Jev key: `typesafe` in `~/.pi/agent/auth.json`, or `TYPESAFE_API_KEY`. Install it for the user, so every Pi process loads it, subagents included.
 
 ## What is checked
 
@@ -84,7 +84,7 @@ Blocked by pi-thunder-guard: this call did not run. It could not be confirmed, w
 
 The workspace: /Users/me/repos/app, /tmp, /private/tmp, /var/folders/…/T, /private/var/folders/…/T
 
-Break it into smaller commands that each do one thing, with every path written out in full, so each can be checked on its own. Avoid chaining steps with &&, ; or |, and avoid hiding paths in variables, subshells, eval or scripts. If a step really has to go beyond these restrictions, don't look for a way around the guard: ask the user to run it themselves.
+Break it into smaller commands that each do one thing, with every path written out in full, so each can be checked on its own. To change a file in the workspace, use the edit or write tool, which aren't held up by this check. Avoid chaining steps with &&, ; or |, and avoid hiding paths in variables, subshells, eval or scripts. If a step really has to go beyond these restrictions, don't look for a way around the guard: ask the user to run it themselves.
 ```
 
 ## Changing the restrictions

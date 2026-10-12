@@ -1,6 +1,6 @@
 {
   "name": "pi-thunder-guard",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A Jev guard for Pi's happy path: bash calls, and writes outside the repository, run only when Jev is 90% sure they keep to restrictions you can edit.",
   "type": "module",
   "exports": {
