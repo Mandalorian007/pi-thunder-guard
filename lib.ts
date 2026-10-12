@@ -8,7 +8,7 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 // ---------------------------------------------------------------- restrictions
 
 export type Restriction = { id: string; title: string; rule: string; keeps: string; breaks: string };
-export type Policy = { confidence: number; restrictions: Restriction[] };
+export type Policy = { confidence: number; editable: string[]; restrictions: Restriction[] };
 
 export const DEFAULT_CONFIDENCE = 0.9;
 
@@ -20,13 +20,16 @@ const slug = (title: string) =>
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_|_$/g, "");
 
-// restrictions.md: optional frontmatter with `confidence`, then one `##`
+// restrictions.md: optional frontmatter with `confidence` and `editable` (a
+// list of files or folders outside the repository the agent may change, given
+// as `- path` lines), then one `##`
 // section per restriction, each with Rule:, Keeps it: and Breaks it:. Anything
 // outside the sections is notes for people. Throws on a broken file rather
 // than guarding with half of it.
 export function parsePolicy(text: string): Policy {
   let body = text;
   let confidence = DEFAULT_CONFIDENCE;
+  const editable: string[] = [];
   const front = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(text);
   if (front) {
     body = text.slice(front[0].length);
@@ -34,6 +37,11 @@ export function parsePolicy(text: string): Policy {
     if (c) {
       confidence = Number(c[1].trim());
       if (!(confidence > 0 && confidence < 1)) throw new Error(`confidence must be between 0 and 1, not ${c[1].trim()}`);
+    }
+    const e = /^editable\s*:[ \t]*\r?\n((?:[ \t]*-[^\n]*\r?\n?)*)/m.exec(front[1] + "\n");
+    if (e) for (const line of e[1].split(/\r?\n/)) {
+      const item = line.replace(/^\s*-\s*/, "").trim().replace(/^["']|["']$/g, "");
+      if (item) editable.push(item);
     }
   }
   const restrictions: Restriction[] = [];
@@ -60,7 +68,7 @@ export function parsePolicy(text: string): Policy {
     restrictions.push(r);
   }
   if (!restrictions.length) throw new Error("no restrictions: each one is a `## Title` section with Rule:, Keeps it: and Breaks it:");
-  return { confidence, restrictions };
+  return { confidence, editable, restrictions };
 }
 
 // ---------------------------------------------------------------- paths
@@ -95,19 +103,20 @@ export function realPath(path: string): string {
 
 export const inside = (path: string, dirs: string[]) => dirs.some((d) => path === d || path.startsWith(d.endsWith(sep) ? d : d + sep));
 
-// The folders the agent may change freely: the repository (or the working
-// directory outside one) and the temp folders, each under its own name and its
-// real one (/tmp and /private/tmp), so Jev recognises either. A root that is
-// the home folder, or above it, is left out, so starting Pi in ~ doesn't make
-// all of ~ fair game.
-export function workspaceOf(root: string, home: string, temps: string[], real: (p: string) => string = (p) => p): string[] {
+// What the agent may change freely: the repository (or the working directory
+// outside one), its shared .git folder (outside the checkout in a worktree),
+// the temp folders and the policy's editable paths, each under its own name
+// and its real one (/tmp and /private/tmp), so Jev recognises either. A root
+// that is the home folder, or above it, is left out, so starting Pi in ~
+// doesn't make all of ~ fair game.
+export function workspaceOf(root: string, home: string, temps: string[], real: (p: string) => string = (p) => p, extra: string[] = []): string[] {
   const dirs: string[] = [];
   const add = (d: string) => {
     for (const name of [d, real(d)]) if (!dirs.includes(name)) dirs.push(name);
   };
   const realHome = real(home);
   if (![root, real(root)].some((r) => r === home || r === realHome || inside(realHome, [r]) || inside(home, [r]))) add(root);
-  for (const t of temps) add(t);
+  for (const t of [...temps, ...extra]) add(t);
   return dirs;
 }
 
@@ -130,12 +139,36 @@ export function describeCall(toolName: string, input: Record<string, unknown>, c
   return undefined;
 }
 
+// The paths written out in a bash command, resolved, each with whether it is
+// in the workspace: a lookup for code, not Jev. Only words that start like a
+// path (/, ~, ./, ../, $HOME) count; globs and other variables are left for
+// Jev to judge from the command itself.
+export function pathsIn(command: string, cwd: string, home: string, workspace: string[], real: (p: string) => string = (p) => p): { path: string; in_workspace: boolean }[] {
+  const found: { path: string; in_workspace: boolean }[] = [];
+  for (const raw of command.match(/'[^']*'|"[^"]*"|[^\s;&|<>()`]+/g) ?? []) {
+    let word = raw.replace(/^['"]|['"]$/g, "").replace(/^(?:\$HOME|\$\{HOME\})(?=\/|$)/, home);
+    word = word.replace(/^[A-Za-z_][A-Za-z0-9_]*=/, "");
+    if (!/^(\/|~\/|~$|\.\.?\/)/.test(word) || /[$*?`]/.test(word)) continue;
+    const path = resolvePath(word, cwd, home);
+    if (found.some((f) => f.path === path)) continue;
+    found.push({ path, in_workspace: inside(real(path), workspace) || inside(path, workspace) });
+  }
+  return found;
+}
+
 // ---------------------------------------------------------------- Jev
 
 export type Question = { type: "noul"; instructions: string; criteria: { true: string; false: string } };
 export type Answers = Record<string, { noul?: number } | undefined>;
 
-export type State = { action: string; working_directory: string; working_directory_in_workspace: boolean; workspace: string[]; home: string };
+export type State = {
+  action: string;
+  paths: { path: string; in_workspace: boolean }[];
+  working_directory: string;
+  working_directory_in_workspace: boolean;
+  workspace: string[];
+  home: string;
+};
 
 // One Noul per restriction, all in one call: does `action` keep to it?
 export function questionsFor(policy: Policy): Record<string, Question> {

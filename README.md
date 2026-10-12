@@ -13,7 +13,7 @@ It guards against mistakes, not against an agent that sets out to get around it.
 pi install git:github.com/Mandalorian007/pi-thunder-guard
 ```
 
-Pin a version with `@v0.1.0`. It needs a Jev key: `typesafe` in `~/.pi/agent/auth.json`, or `TYPESAFE_API_KEY`. Install it for the user, so every Pi process loads it, subagents included.
+Pin a version with `@v0.2.0`. It needs a Jev key: `typesafe` in `~/.pi/agent/auth.json`, or `TYPESAFE_API_KEY`. Install it for the user, so every Pi process loads it, subagents included.
 
 ## What is checked
 
@@ -27,8 +27,10 @@ Pin a version with `@v0.1.0`. It needs a Jev key: `typesafe` in `~/.pi/agent/aut
 
 The **workspace** is:
 - the repository Pi runs in (or the working directory, outside a repository);
+- the repository's shared `.git` folder. In a worktree that folder is outside the checkout, but all the repository's worktrees share it;
 - `/tmp`;
-- the user temp folder (`$TMPDIR`).
+- the user temp folder (`$TMPDIR`);
+- the `editable` paths in the restrictions file. The shipped file lists `~/.config/zsh/agents.zsh`, the agent settings that `~/.zshrc` sources, so agents can change their own aliases while `~/.zshrc` itself stays protected.
 
 Each is listed under its own name and its real one (`/tmp` and `/private/tmp`). If the working directory is your home folder or above it, only the temp folders count, so starting Pi in `~` doesn't make all of `~` fair game.
 
@@ -46,13 +48,22 @@ Each `##` section is one restriction:
 - **Rule** is what the model is shown when a call is blocked.
 - **Keeps it** and **Breaks it** describe, for Jev, what each answer looks like.
 
-The file's frontmatter holds the confidence (`0.9`).
+The file's frontmatter holds the confidence (`0.9`) and the `editable` list:
+
+```yaml
+---
+confidence: 0.9
+editable:
+  - ~/.config/zsh/agents.zsh
+---
+```
 
 ## How a call is decided
 
 1. The call is described in words: `bash: <command>`, or `write <path>: replaces the whole file, which already exists`.
 2. One request goes to Jev. Its state is:
    - the call;
+   - each path written out in the command (anything starting with `/`, `~`, `./`, `../` or `$HOME`), resolved, with whether it is in the workspace. Code works this out, not Jev;
    - the working directory, and whether that is inside the workspace;
    - the workspace folders;
    - the home folder.
@@ -78,12 +89,15 @@ Break it into smaller commands that each do one thing, with every path written o
 
 ## Changing the restrictions
 
-- **For everyone:** edit `restrictions.md` here, then run `npm run calibrate`. It asks Jev about 38 labelled calls (17 that should run, 21 that should be blocked) and prints each score, for about $0.002. Add a case whenever a call is wrongly allowed or blocked.
+- **For everyone:** edit `restrictions.md` here, then run `npm run calibrate`. It asks Jev about 45 labelled calls (22 that should run, 23 that should be blocked; some run from a worktree) and prints each score, for about $0.002. Add a case whenever a call is wrongly allowed or blocked.
 - **Just for you:** copy the file to `~/.pi/agent/guard.md`. That copy replaces the shipped one. Check it with `npm run calibrate -- ~/.pi/agent/guard.md`.
 
 The file is read on every call, so an edit applies at once. A broken file blocks every guarded call and says what is wrong.
 
-Calibration at v0.1.0: 37 of the 38 calls were decided as labelled. Every call that should be blocked was, and each had at least one restriction at 0.30 or below. The one miss was creating a new file outside the workspace (`write ~/notes-new.md`, 0.87), which was blocked. The closest calls that were allowed scored 0.90 (`echo hello > /tmp/out.txt`) and 0.91 (`npm test`, `brew install jq`).
+Calibration at v0.2.0: 41 of the 45 calls were decided as labelled.
+- **Every call that should be blocked was,** each with at least one restriction at 0.37 or below.
+- **The misses were all blocked rather than allowed:** creating a new file outside the workspace (about 0.8), and calls that land close to 0.9, such as `brew install jq` and a `>>` onto a worktree's shared `.git/info/exclude`.
+- **Jev's scores move by about 0.04 between identical runs,** so a safe call scoring around 0.9 is sometimes blocked. The model then gets the advice to break the call down, which usually gets it through.
 
 ## Turning it off
 

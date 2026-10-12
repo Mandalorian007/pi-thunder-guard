@@ -3,13 +3,14 @@ import { mkdtempSync, readFileSync, realpathSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { blockedMessage, describeCall, inside, parsePolicy, questionsFor, realPath, resolvePath, verdictOf, workspaceOf } from "../lib.ts";
+import { blockedMessage, describeCall, inside, parsePolicy, pathsIn, questionsFor, realPath, resolvePath, verdictOf, workspaceOf } from "../lib.ts";
 
 const SHIPPED = readFileSync(new URL("../restrictions.md", import.meta.url), "utf8");
 
 test("the shipped restrictions parse", () => {
   const policy = parsePolicy(SHIPPED);
   assert.equal(policy.confidence, 0.9);
+  assert.deepEqual(policy.editable, ["~/.config/zsh/agents.zsh"]);
   assert.deepEqual(
     policy.restrictions.map((r) => r.id),
     ["files_outside_the_workspace", "startup_and_access_files", "the_disk_and_the_system"],
@@ -31,6 +32,10 @@ test("a restriction spans lines, and a broken file says what is wrong", () => {
   assert.throws(() => parsePolicy("---\nconfidence: 90\n---\n## A\nRule: a\nKeeps it: b\nBreaks it: c\n"), /between 0 and 1/);
   assert.throws(() => parsePolicy("## A\nRule: a\nKeeps it: b\nBreaks it: c\n## A\nRule: a\nKeeps it: b\nBreaks it: c\n"), /two restrictions/);
   assert.equal(parsePolicy("---\nconfidence: 0.75\n---\n## A\nRule: a\nKeeps it: b\nBreaks it: c\n").confidence, 0.75);
+  const listed = parsePolicy("---\n# notes\neditable:\n  - ~/a.zsh\n  - \"/opt/b\"\nconfidence: 0.8\n---\n## A\nRule: a\nKeeps it: b\nBreaks it: c\n");
+  assert.deepEqual(listed.editable, ["~/a.zsh", "/opt/b"]);
+  assert.equal(listed.confidence, 0.8);
+  assert.deepEqual(policy.editable, []);
 });
 
 test("paths resolve like Pi's file tools, through symlinks, even when missing", () => {
@@ -49,6 +54,12 @@ test("the workspace is the repository and the temp folders, never home or above"
   assert.deepEqual(workspaceOf("/", "/Users/me", temps), temps);
   const real = (p: string) => (p === "/tmp" ? "/private/tmp" : p);
   assert.deepEqual(workspaceOf("/Users/me/repos/app", "/Users/me", ["/tmp"], real), ["/Users/me/repos/app", "/tmp", "/private/tmp"]);
+  const worktree = workspaceOf("/Users/me/wt/fix", "/Users/me", ["/tmp"], real, ["/Users/me/repos/app/.git", "/Users/me/.config/zsh/agents.zsh"]);
+  assert.deepEqual(worktree, ["/Users/me/wt/fix", "/tmp", "/private/tmp", "/Users/me/repos/app/.git", "/Users/me/.config/zsh/agents.zsh"]);
+  assert.ok(inside("/Users/me/repos/app/.git/info/exclude", worktree));
+  assert.ok(inside("/Users/me/.config/zsh/agents.zsh", worktree));
+  assert.ok(!inside("/Users/me/.config/zsh/other.zsh", worktree));
+  assert.ok(!inside("/Users/me/repos/app/src/a.ts", worktree));
   assert.ok(inside("/Users/me/repos/app/src/a.ts", ["/Users/me/repos/app"]));
   assert.ok(!inside("/Users/me/repos/app-old/a.ts", ["/Users/me/repos/app"]));
   assert.ok(inside("/Users/me/repos/app", ["/Users/me/repos/app"]));
@@ -65,6 +76,20 @@ test("calls are described for Jev; other tools aren't guarded", () => {
   assert.equal(describeCall("edit", { path: "src/a.ts", edits: [] }, "/repo", "/Users/me", exists)?.path, "/repo/src/a.ts");
   assert.equal(describeCall("read", { path: "/etc/hosts" }, "/repo", "/Users/me", exists), undefined);
   assert.equal(describeCall("grep", { pattern: "x" }, "/repo", "/Users/me", exists), undefined);
+});
+
+test("paths written in a command are resolved and looked up in the workspace", () => {
+  const ws = ["/Users/me/repos/app", "/tmp", "/Users/me/.config/zsh/agents.zsh"];
+  const paths = (c: string) => pathsIn(c, "/Users/me/repos/app", "/Users/me", ws);
+  assert.deepEqual(paths("echo 'alias x=y' >> ~/.config/zsh/agents.zsh"), [{ path: "/Users/me/.config/zsh/agents.zsh", in_workspace: true }]);
+  assert.deepEqual(paths('rm -rf "$HOME/Documents" ./build /tmp/x'), [
+    { path: "/Users/me/Documents", in_workspace: false },
+    { path: "/Users/me/repos/app/build", in_workspace: true },
+    { path: "/tmp/x", in_workspace: true },
+  ]);
+  assert.deepEqual(paths("cd ~ && rm -rf .config"), [{ path: "/Users/me", in_workspace: false }]);
+  assert.deepEqual(paths("rm ~/repos/*/x $D/y https://a.b/c src/a.ts"), []);
+  assert.deepEqual(paths("cp a.txt OUT=/tmp/z"), [{ path: "/tmp/z", in_workspace: true }]);
 });
 
 test("one Noul per restriction, with both outcomes described", () => {

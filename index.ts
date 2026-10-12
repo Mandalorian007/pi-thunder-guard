@@ -13,7 +13,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { blockedMessage, describeCall, inside, parsePolicy, questionsFor, realPath, verdictOf, workspaceOf, type Answers, type Policy, type Question, type State } from "./lib.ts";
+import { blockedMessage, describeCall, inside, parsePolicy, pathsIn, questionsFor, realPath, resolvePath, verdictOf, workspaceOf, type Answers, type Policy, type Question, type State } from "./lib.ts";
 
 export const JEV_URL = "https://api.typesafe.ai/v1/systemone";
 const TIMEOUT_MS = 10_000;
@@ -58,20 +58,28 @@ export function jevClient(apiKey: string, doFetch: typeof fetch = fetch): Ask {
   };
 }
 
-const roots = new Map<string, string>();
+const repos = new Map<string, { root: string; gitDir?: string }>();
 
-// The repository the working directory is in, or the directory itself.
-function rootOf(cwd: string): string {
-  let root = roots.get(cwd);
-  if (!root) {
+// The repository the working directory is in (or the directory itself), and
+// its shared .git folder, which for a worktree is outside the checkout.
+function repoOf(cwd: string): { root: string; gitDir?: string } {
+  let repo = repos.get(cwd);
+  if (!repo) {
     try {
-      root = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+      const [root, gitDir] = execFileSync("git", ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"], {
+        cwd,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+        .trim()
+        .split("\n");
+      repo = { root, gitDir };
     } catch {
-      root = cwd;
+      repo = { root: cwd };
     }
-    roots.set(cwd, root);
+    repos.set(cwd, repo);
   }
-  return root;
+  return repo;
 }
 
 const TEMPS = [...new Set(["/tmp", tmpdir(), process.env.TMPDIR].filter((t): t is string => !!t).map((t) => t.replace(/\/+$/, "")))];
@@ -89,10 +97,6 @@ export default function thunderGuard(pi: ExtensionAPI) {
     const home = homedir();
     const call = describeCall(event.toolName, event.input as Record<string, unknown>, ctx.cwd, home, existsSync);
     if (!call) return;
-    const workspace = workspaceOf(rootOf(ctx.cwd), home, TEMPS, realPath);
-
-    // A write or edit inside the workspace needs no question.
-    if (call.path && inside(realPath(call.path), workspace)) return;
 
     let policy: Policy;
     let file: string;
@@ -103,6 +107,13 @@ export default function thunderGuard(pi: ExtensionAPI) {
       return { block: true, reason: `Blocked by pi-thunder-guard: this call did not run. ${why}` };
     }
 
+    const { root, gitDir } = repoOf(ctx.cwd);
+    const editable = policy.editable.map((p) => resolvePath(p, home, home));
+    const workspace = workspaceOf(root, home, TEMPS, realPath, [...(gitDir ? [gitDir] : []), ...editable]);
+
+    // A write or edit inside the workspace needs no question.
+    if (call.path && inside(realPath(call.path), workspace)) return;
+
     const blocked = (verdict?: ReturnType<typeof verdictOf>, problem?: string) => {
       if (ctx.hasUI) ctx.ui.notify(`Guard blocked: ${call.action.slice(0, 120)}`, "warning");
       return { block: true, reason: blockedMessage(policy, workspace, verdict, problem) };
@@ -112,6 +123,7 @@ export default function thunderGuard(pi: ExtensionAPI) {
 
     const state: State = {
       action: call.action,
+      paths: call.path ? [{ path: call.path, in_workspace: false }] : pathsIn(String((event.input as { command?: unknown }).command ?? ""), ctx.cwd, home, workspace, realPath),
       working_directory: ctx.cwd,
       working_directory_in_workspace: inside(realPath(ctx.cwd), workspace),
       workspace,
