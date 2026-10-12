@@ -1,0 +1,38 @@
+{
+  "name": "pi-thunder-guard",
+  "version": "0.1.0",
+  "description": "A Jev guard for Pi's happy path: bash calls, and writes outside the repository, run only when Jev is 90% sure they keep to restrictions you can edit.",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "license": "MIT",
+  "author": "Mandalorian007",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mandalorian007/pi-thunder-guard.git"
+  },
+  "homepage": "https://github.com/Mandalorian007/pi-thunder-guard#readme",
+  "bugs": "https://github.com/Mandalorian007/pi-thunder-guard/issues",
+  "keywords": ["pi-package", "pi", "pi-coding-agent", "jev", "typesafe", "guard", "permissions", "safety"],
+  "files": ["index.ts", "lib.ts", "restrictions.md", "README.md", "LICENSE"],
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "scripts": {
+    "test": "node --test 'tests/*.test.ts'",
+    "typecheck": "tsc --noEmit -p .",
+    "calibrate": "node scripts/calibrate.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "1.1.0",
+    "@types/node": "22.18.0",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22.19"
+  }
+}
